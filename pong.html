@@ -1,0 +1,215 @@
+<html>
+    <head>
+        <script src="assets/js/physicsjs-full.min.js"></script>
+        <link rel="stylesheet" href="style.css">
+    </head>
+    <body>
+        <div class="players">
+            <p class="player">Jugador 1 - <span id="result-1"></span></p>
+            <p class="player">Jugador 2 - <span id="result-2"></span></p>
+        </div>
+        <div class="vl"></div>
+        <script>
+            Physics(function (world) {
+                var self = this;
+                var player1 = 0;
+                var player2 = 0;
+
+                document.getElementById('result-1').innerHTML = player1;
+                document.getElementById('result-2').innerHTML = player2;
+
+                // bounds of the window
+                var viewportBounds = Physics.aabb(0, 0, window.innerWidth, window.innerHeight)
+                    ,edgeBounce
+                    ,renderer
+                    ;
+
+                // create a renderer
+                renderer = Physics.renderer('canvas', {
+                    el: 'viewport'
+                });
+
+                // add the renderer
+                world.add(renderer);
+
+                // render on each step
+                world.on('step', function () {
+                    world.render();
+                });
+
+                // constrain objects to these bounds
+                edgeBounce = Physics.behavior('edge-collision-detection', {
+                    aabb: viewportBounds
+                    ,restitution: 1.0
+                    ,cof: 2.0
+                });
+
+                // resize events
+                window.addEventListener('resize', function () {
+                    // as of 0.7.0 the renderer will auto resize... so we just take the values from the renderer
+                    viewportBounds = Physics.aabb(0, 0, window.innerWidth, window.innerHeight);
+                    // update the boundaries
+                    edgeBounce.setAABB(viewportBounds);
+
+                }, true);
+
+                function randomNumbers(max, min) {
+                    return Math.random() * (max-min) + min;
+                }
+
+                /*
+                * For creating ball, it set a random position between middle of the window
+                * and with vx set the direction where the ball move.
+                */
+                function createBall() {
+                    world.add(Physics.body('circle', {    
+                        x: window.innerWidth * randomNumbers(0.6, 0.4)
+                        ,y: window.innerHeight * 0.3
+                        ,vx: randomNumbers(0.9, -0.9) * 1.1
+                        ,vy: 0.1
+                        ,mass: 2
+                        ,coff: 0
+                        ,label: 'ball'
+                        ,radius: 40
+                        ,styles: {
+                            //fillStyle: '#FFFFFF'
+                            src: '../assets/images/pelotaNeon.png'
+                            ,width: 100
+                            ,height: 100
+                        }
+                    }));
+                }
+
+                // pong paddles
+                var paddleRight = Physics.body('rectangle', {
+                    width: 50
+                    ,height: 250
+                    ,x: window.innerWidth* 0.9
+                    ,y: window.innerHeight * 0.5
+                    ,treatment: 'static'
+                    ,restitution: 0.99
+                    ,label: 'paddleRight'
+                    ,styles: {
+                        //fillStyle: '#FFFFFF'
+                        src: '../assets/images/cajaNeon.png'
+                        ,width: 60
+                        ,height: 280
+                    }
+                });
+
+                var paddleLeft = Physics.body('rectangle', {
+                    width: 50
+                    ,height: 250
+                    ,x: window.innerWidth * 0.1
+                    ,y: window.innerHeight * 0.5
+                    ,treatment: 'static'
+                    ,restitution: 0.99
+                    ,label: 'paddleLeft'
+                    ,styles: {
+                        // fillStyle: '#FFFFFF'
+                        src: '../assets/images/cajaNeon.png'
+                        ,width: 60
+                        ,height: 280
+                    }
+                });
+
+                world.add(paddleLeft);
+                world.add(paddleRight);
+                createBall();
+
+                // add behaviors to the world
+                world.add([
+                     Physics.behavior('body-impulse-response')
+                    ,Physics.behavior('body-collision-detection')
+                    ,Physics.behavior('sweep-prune')
+                    ,edgeBounce
+                ]);
+
+                /*
+                * Acceleration will allow the ball to move faster when hit. 
+                * With physics this happens when you add gravity, for this case you will be added "gravity" on the x-axis.
+                */
+                var acceleration = Physics.behavior('constant-acceleration', {
+                    acc: { x : 0, y: 0 } // set acceleration to 0 for remove gravity in y-axis.
+                });
+
+                // add queries for find elements
+                var collisionPaddleRight = Physics.query({
+                    $or: [
+                        { bodyA: { label: 'paddleRight' }, bodyB: { label: 'ball' } }
+                        ,{ bodyB: { label: 'paddleRight' }, bodyA: { label: 'ball' } }
+                    ]
+                });
+
+                var collisionPaddleLeft = Physics.query({
+                    $or: [
+                        { bodyA: { label: 'paddleLeft' }, bodyB: { label: 'ball' } }
+                        ,{ bodyB: { label: 'paddleLeft' }, bodyA: { label: 'ball' } }
+                    ]
+                });
+
+                var ball = Physics.query({ label: 'ball' });
+
+                world.add( acceleration );
+
+                world.on('collisions:detected', function( data ) {
+                    var foundCollisionPaddleRight = Physics.util.find( data.collisions, collisionPaddleRight );
+                    var foundCollisionPaddleLeft = Physics.util.find( data.collisions, collisionPaddleLeft );
+                    var foundBall = Physics.util.find( self._bodies, ball );
+
+                    // Change acceleration when ball collision with a paddle, depend of the side it set the acceleration in one direction 
+                    if (foundCollisionPaddleRight) {
+                        acceleration.setAcceleration({ x: -0.0002, y: 0.0 });
+                    } else if (foundCollisionPaddleLeft) {
+                        acceleration.setAcceleration({ x: 0.0002, y: 0.0 });
+                    }
+
+                    /* 
+                    * This part restart the game when the ball collission with right wall or left wall
+                    */
+                    if (data.collisions[0].pos.x <= -40) { // if collisions is left wall
+                        player1 +=1;
+                        document.getElementById('result-1').innerHTML = player1;
+                        restartGame(foundBall);
+                    } else if (data.collisions[0].pos.x >= 40) { // if collisions is right wall
+                        player2 +=1;
+                        document.getElementById('result-2').innerHTML = player2;
+                        restartGame(foundBall);
+                    }
+
+                });
+
+                function restartGame(foundBall) {
+                    world.removeBody(foundBall);
+                    acceleration.setAcceleration({ x: 0.0, y: 0.0 }); // set the acceleration to 0
+                    createBall();
+                }
+
+                // Event for move. The ifs are limit for movement
+                document.addEventListener('keydown', function( e ) {
+                    var speed = 40;
+                    switch ( e.keyCode ){
+                        case 87: // up with 'w'
+                            if(paddleLeft.state.pos.y > 140) paddleLeft.state.pos.y = paddleLeft.state.pos.y - speed;
+                        break;
+                        case 83: // down with 's'
+                            if(paddleLeft.state.pos.y <= innerHeight - 140) paddleLeft.state.pos.y = paddleLeft.state.pos.y + speed;
+                        break;
+                        case 38: // up with arrow up
+                            if(paddleRight.state.pos.y > 140) paddleRight.state.pos.y = paddleRight.state.pos.y - speed;
+                        break;
+                        case 40: // down with arrow down
+                            if(paddleRight.state.pos.y <= innerHeight - 140) paddleRight.state.pos.y = paddleRight.state.pos.y + speed;
+                        break;
+                    }
+                });
+
+                // subscribe to ticker to advance the simulation
+                Physics.util.ticker.on(function( time ) {
+                    world.step( time );
+                });
+            });
+
+        </script>
+    </body>
+</html>
